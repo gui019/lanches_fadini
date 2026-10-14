@@ -1,0 +1,57 @@
+name: carbons-burguer
+services:
+  db:
+    image: postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+    environment:
+      POSTGRES_DB: carbons
+      POSTGRES_USER: carbons
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Execute python infra/init_env.py}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U carbons -d carbons"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+  api:
+    profiles: ["full"]
+    build:
+      context: .
+      dockerfile: infra/backend.Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://carbons:${POSTGRES_PASSWORD}@db:5432/carbons
+    command: sh -c 'alembic upgrade head && python -m app.manage seed && uvicorn app.main:app --host 0.0.0.0 --no-access-log'
+    depends_on:
+      db:
+        condition: service_healthy
+    ports: ["127.0.0.1:8000:8000"]
+    restart: unless-stopped
+  worker:
+    profiles: ["full"]
+    build:
+      context: .
+      dockerfile: infra/backend.Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://carbons:${POSTGRES_PASSWORD}@db:5432/carbons
+    command: python -m app.worker
+    depends_on:
+      api:
+        condition: service_started
+    restart: unless-stopped
+  web:
+    profiles: ["full"]
+    build:
+      context: .
+      dockerfile: infra/frontend.Dockerfile
+    environment:
+      API_INTERNAL_URL: http://api:8000
+    ports: ["127.0.0.1:3000:3000"]
+    depends_on: [api]
+    restart: unless-stopped
+volumes:
+  postgres_data:
