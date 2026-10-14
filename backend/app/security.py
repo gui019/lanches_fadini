@@ -8,8 +8,8 @@ from fastapi import Depends, Request
 from sqlalchemy import select
 
 from .db import get_db
-from .models import Admin, AdminSession, Audit, now
-from .services import digest, fail
+from .models import Admin, AdminSession, Audit, utc_now
+from .services import hash_token, fail
 
 password_hasher = PasswordHasher()
 # A dummy hash keeps nonexistent-user authentication close to the same code path.
@@ -25,7 +25,11 @@ def authenticate(db, username, password, otp):
     if not admin or not pyotp.TOTP(admin.totp_secret).verify(otp, valid_window=1):
         fail("Usuário, senha ou código de autenticação inválido.", 401)
     token = secrets.token_urlsafe(48)
-    db.add(AdminSession(token_hash=digest(token), admin_id=admin.id, expires_at=now() + timedelta(hours=8)))
+    db.add(
+        AdminSession(
+            token_hash=hash_token(token), admin_id=admin.id, expires_at=utc_now() + timedelta(hours=8)
+        )
+    )
     db.add(Audit(admin_id=admin.id, action="auth.login", target="admin"))
     return token
 
@@ -33,7 +37,9 @@ def authenticate(db, username, password, otp):
 def require_admin(request: Request, db=Depends(get_db)):
     token = request.cookies.get("carbons_session", "")
     session = db.scalar(
-        select(AdminSession).where(AdminSession.token_hash == digest(token), AdminSession.expires_at > now())
+        select(AdminSession).where(
+            AdminSession.token_hash == hash_token(token), AdminSession.expires_at > utc_now()
+        )
     )
     if not session:
         fail("Entre no painel para continuar.", 401)

@@ -1,4 +1,4 @@
-name: Testes e build
+name: Tests and build
 on:
   push:
     branches: [main, work]

@@ -13,11 +13,11 @@ import {
   ShoppingBag,
   Wallet,
 } from "lucide-react";
-import { api } from "@/lib/api";
+import { requestApi } from "@/lib/api";
 import {
   type Order,
-  dateLabel,
-  money,
+  formatServiceDate,
+  formatCurrency,
   paymentLabels,
   statusLabels,
 } from "@/lib/types";
@@ -32,7 +32,7 @@ export default function Tracking({ token }: { token: string }) {
     [remaining, setRemaining] = useState("");
   const refresh = useCallback(async () => {
     try {
-      setOrder(await api<Order>(`/orders/${token}`));
+      setOrder(await requestApi<Order>(`/orders/${token}`));
       setError("");
     } catch (e) {
       setError((e as Error).message);
@@ -63,7 +63,9 @@ export default function Tracking({ token }: { token: string }) {
   async function cancel() {
     setBusy(true);
     try {
-      setOrder(await api<Order>(`/orders/${token}/cancel`, { method: "POST" }));
+      setOrder(
+        await requestApi<Order>(`/orders/${token}/cancel`, { method: "POST" }),
+      );
       setConfirm(false);
       setError("");
     } catch (e) {
@@ -76,7 +78,7 @@ export default function Tracking({ token }: { token: string }) {
     setBusy(true);
     try {
       setOrder(
-        await api<Order>("/payments/pix", {
+        await requestApi<Order>("/payments/pix", {
           method: "POST",
           body: JSON.stringify({ token }),
         }),
@@ -249,12 +251,14 @@ export default function Tracking({ token }: { token: string }) {
                           </small>
                         ))}
                       </div>
-                      <span>{money(item.unit_price * item.quantity)}</span>
+                      <span>
+                        {formatCurrency(item.unit_price * item.quantity)}
+                      </span>
                     </div>
                   ))}
                   <div className="summary-row" style={{ marginTop: 15 }}>
                     <span>Subtotal</span>
-                    <span>{money(order.subtotal)}</span>
+                    <span>{formatCurrency(order.subtotal)}</span>
                   </div>
                   <div className="summary-row">
                     <span>
@@ -264,13 +268,13 @@ export default function Tracking({ token }: { token: string }) {
                     </span>
                     <span>
                       {order.delivery_fee
-                        ? money(order.delivery_fee)
+                        ? formatCurrency(order.delivery_fee)
                         : "Grátis"}
                     </span>
                   </div>
                   <div className="summary-row total">
                     <b>Total</b>
-                    <b>{money(order.total)}</b>
+                    <b>{formatCurrency(order.total)}</b>
                   </div>
                 </section>
               </div>
@@ -280,7 +284,7 @@ export default function Tracking({ token }: { token: string }) {
                   <div className="info-list">
                     <CalendarDays />
                     <div>
-                      <b>Sexta, {dateLabel(order.service_date)}</b>
+                      <b>Sexta, {formatServiceDate(order.service_date)}</b>
                       <span>
                         Horário solicitado: {order.slot}
                         <br />

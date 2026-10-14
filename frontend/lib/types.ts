@@ -85,11 +85,11 @@ export type Order = {
   change_for?: number;
   pix?: { copy_paste: string; qr_base64: string };
 };
-export const money = (cents: number) =>
+export const formatCurrency = (cents: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(
     cents / 100,
   );
-export const dateLabel = (date: string) =>
+export const formatServiceDate = (date: string) =>
   new Intl.DateTimeFormat("pt-BR", {
     day: "2-digit",
     month: "2-digit",

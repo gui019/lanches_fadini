@@ -23,4 +23,4 @@ with psycopg.connect(url.render_as_string(hide_password=False), autocommit=True)
     if not conn.execute("SELECT 1 FROM pg_database WHERE datname = %s", ["carbons_test"]).fetchone():
         conn.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier("carbons_test")))
 PY
-echo "Dependências, banco, migrações e cardápio preparados."
+echo "Dependencies, database, migrations, and catalog are ready."

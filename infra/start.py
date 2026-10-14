@@ -18,7 +18,7 @@ def main():
             sock.settimeout(1)
             if sock.connect_ex(("127.0.0.1", port)) == 0:
                 raise SystemExit(
-                    f"A porta {port} já está em uso. Encerre seu servidor anterior."
+                    f"Port {port} is already in use. Stop your previous server first."
                 )
     os.environ["NEXT_TELEMETRY_DISABLED"] = "1"
     processes = []

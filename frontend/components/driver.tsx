@@ -1,8 +1,8 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { Check, MapPin, Phone, Truck } from "lucide-react";
-import { api } from "@/lib/api";
-import { money, paymentLabels } from "@/lib/types";
+import { requestApi } from "@/lib/api";
+import { formatCurrency, paymentLabels } from "@/lib/types";
 import { SimpleHeader } from "./simple-header";
 import { Modal } from "./modal";
 type Stop = {
@@ -33,7 +33,7 @@ export default function Driver({ token }: { token: string }) {
     [busy, setBusy] = useState(false);
   const refresh = useCallback(
     () =>
-      api<Run>(`/delivery/${token}`)
+      requestApi<Run>(`/delivery/${token}`)
         .then((data) => {
           setRun(data);
           setError("");
@@ -52,7 +52,7 @@ export default function Driver({ token }: { token: string }) {
   async function update(stop: Stop, status: string) {
     setBusy(true);
     try {
-      await api(`/delivery/${token}/stops/${stop.id}`, {
+      await requestApi(`/delivery/${token}/stops/${stop.id}`, {
         method: "POST",
         body: JSON.stringify({ status }),
       });
@@ -114,13 +114,15 @@ export default function Driver({ token }: { token: string }) {
                   {stop.address.complement && `· ${stop.address.complement}`}
                 </p>
                 <p>
-                  <b>{money(stop.total)}</b> ·{" "}
+                  <b>{formatCurrency(stop.total)}</b> ·{" "}
                   {paymentLabels[stop.payment_method]} ·{" "}
                   {stop.payment_status === "paid"
                     ? "Já pago"
                     : "Receber na entrega"}
                 </p>
-                {stop.change_for && <p>Troco para {money(stop.change_for)}</p>}
+                {stop.change_for && (
+                  <p>Troco para {formatCurrency(stop.change_for)}</p>
+                )}
                 <a className="back-link" href={`tel:+55${stop.phone}`}>
                   <Phone size={14} />
                   Ligar para o cliente
@@ -165,7 +167,7 @@ export default function Driver({ token }: { token: string }) {
               Confirma que o pedido {selected?.order_code} foi entregue e que{" "}
               {selected?.payment_status === "paid"
                 ? "o pagamento já estava confirmado"
-                : `você recebeu ${money(selected?.total || 0)}`}
+                : `você recebeu ${formatCurrency(selected?.total || 0)}`}
               ? Essa ação conclui o pedido.
             </p>
             <button

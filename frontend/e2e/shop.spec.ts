@@ -48,7 +48,7 @@ async function adminLogin(page: Page) {
   ).toBeVisible();
 }
 
-test("cardápio real, filtros e layout sem rolagem horizontal", async ({
+test("catalog displays menu prices and filters without horizontal overflow", async ({
   page,
 }) => {
   const errors: string[] = [];
@@ -74,7 +74,7 @@ test("cardápio real, filtros e layout sem rolagem horizontal", async ({
   expect(errors).toEqual([]);
 });
 
-test("personalização limita adicionais e sacola persiste", async ({ page }) => {
+test("customization limits add-ons and persists the cart", async ({ page }) => {
   await page.goto("/");
   await page
     .getByRole("button", { name: "Adicionar Clássico Salada", exact: true })
@@ -102,7 +102,7 @@ test("personalização limita adicionais e sacola persiste", async ({ page }) =>
   await expect(page.getByRole("dialog")).not.toBeVisible();
 });
 
-test("pedido em dinheiro com entrega, acompanhamento e cancelamento", async ({
+test("cash delivery order supports tracking and cancellation", async ({
   page,
 }) => {
   await addBurger(page);
@@ -136,7 +136,9 @@ test("pedido em dinheiro com entrega, acompanhamento e cancelamento", async ({
   ).toBeVisible();
 });
 
-test("retirada, MFA, preparo e recebimento no painel", async ({ page }) => {
+test("pickup order supports MFA login, preparation, and payment confirmation", async ({
+  page,
+}) => {
   await addBurger(page);
   await fillCustomer(page);
   await page.getByRole("button", { name: /Retirada Sem taxa/ }).click();
@@ -186,7 +188,9 @@ test("retirada, MFA, preparo e recebimento no painel", async ({ page }) => {
   ).toBeVisible();
 });
 
-test("acessibilidade do cardápio e modal por teclado", async ({ page }) => {
+test("catalog and customization dialog support accessibility and keyboard navigation", async ({
+  page,
+}) => {
   await page.goto("/");
   await expect(page.locator(".product-card")).toHaveCount(6);
   const results = await new AxeBuilder({ page })

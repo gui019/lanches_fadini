@@ -23,13 +23,13 @@ import {
   Volume2,
   VolumeX,
 } from "lucide-react";
-import { api } from "@/lib/api";
+import { requestApi } from "@/lib/api";
 import {
   type Catalog,
   type Order,
   type Product,
-  dateLabel,
-  money,
+  formatServiceDate,
+  formatCurrency,
   paymentLabels,
   statusLabels,
 } from "@/lib/types";
@@ -106,14 +106,14 @@ export default function AdminPanel() {
       if (status) params.set("status", status);
       if (service) params.set("service_date", service);
       const [o, c, b, r, d, a] = await Promise.all([
-        api<{ orders: Order[] }>(`/admin/orders?${params}`),
-        api<Catalog>("/catalog"),
-        api<{ batches: Batch[] }>("/admin/inventory"),
-        api<Report>(
+        requestApi<{ orders: Order[] }>(`/admin/orders?${params}`),
+        requestApi<Catalog>("/catalog"),
+        requestApi<{ batches: Batch[] }>("/admin/inventory"),
+        requestApi<Report>(
           `/admin/reports/sales${service ? `?service_date=${service}` : ""}`,
         ),
-        api<{ runs: Run[] }>("/admin/delivery-runs"),
-        api<AuditData>("/admin/audit"),
+        requestApi<{ runs: Run[] }>("/admin/delivery-runs"),
+        requestApi<AuditData>("/admin/audit"),
       ]);
       if (
         previous.current &&
@@ -143,7 +143,7 @@ export default function AdminPanel() {
     }
   }, [status, service, page, sound]);
   useEffect(() => {
-    api<{ username: string }>("/admin/auth/me")
+    requestApi<{ username: string }>("/admin/auth/me")
       .then((data) => {
         setUsername(data.username);
         setAuth(true);
@@ -162,7 +162,7 @@ export default function AdminPanel() {
     setBusy(true);
     setError("");
     try {
-      const result = await api<Record<string, unknown>>(path, {
+      const result = await requestApi<Record<string, unknown>>(path, {
         method,
         body: body ? JSON.stringify(body) : undefined,
       });
@@ -182,7 +182,7 @@ export default function AdminPanel() {
     setBusy(true);
     setError("");
     try {
-      await api("/admin/auth/login", {
+      await requestApi("/admin/auth/login", {
         method: "POST",
         body: JSON.stringify({
           username: form.get("username"),
@@ -200,7 +200,7 @@ export default function AdminPanel() {
   }
   async function logout() {
     try {
-      await api("/admin/auth/logout", { method: "POST" });
+      await requestApi("/admin/auth/logout", { method: "POST" });
       setAuth(false);
       setOrders([]);
     } catch (e) {
@@ -385,19 +385,21 @@ export default function AdminPanel() {
             />
             <Metric
               label="Vendas brutas"
-              value={money(report.gross)}
+              value={formatCurrency(report.gross)}
               note="Sem cancelados e expirados"
             />
             <Metric
               label="Recebido"
-              value={money(report.received)}
+              value={formatCurrency(report.received)}
               note="Pagamentos confirmados"
             />
             <Metric
               label="Ticket médio"
-              value={money(report.average_ticket)}
+              value={formatCurrency(report.average_ticket)}
               note={
-                service ? `Sexta, ${dateLabel(service)}` : "Todas as semanas"
+                service
+                  ? `Sexta, ${formatServiceDate(service)}`
+                  : "Todas as semanas"
               }
             />
           </div>
@@ -519,7 +521,7 @@ export default function AdminPanel() {
                   <div>
                     <h3>{product.name}</h3>
                     <p>
-                      {money(product.price)} ·{" "}
+                      {formatCurrency(product.price)} ·{" "}
                       {product.available ? "Disponível" : "Pausado ou esgotado"}{" "}
                       · v{product.version}
                     </p>
@@ -605,7 +607,7 @@ export default function AdminPanel() {
             <div className="admin-stock-grid">
               {batches.map((batch) => (
                 <section className="stock-card" key={batch.service_date}>
-                  <h3>Sexta-feira · {dateLabel(batch.service_date)}</h3>
+                  <h3>Sexta-feira · {formatServiceDate(batch.service_date)}</h3>
                   <span
                     className={`status-badge ${batch.low ? "expired" : "confirmed"}`}
                   >
@@ -696,7 +698,8 @@ export default function AdminPanel() {
                       <div className="ranking-row">
                         <b>{item.name}</b>
                         <span>
-                          {item.quantity} lanches · {money(item.revenue)}
+                          {item.quantity} lanches ·{" "}
+                          {formatCurrency(item.revenue)}
                         </span>
                       </div>
                       <div className="ranking-bar">
@@ -719,16 +722,16 @@ export default function AdminPanel() {
                 {Object.entries(report.payments).map(([method, total]) => (
                   <div className="summary-row" key={method}>
                     <span>{paymentLabels[method]}</span>
-                    <b>{money(total)}</b>
+                    <b>{formatCurrency(total)}</b>
                   </div>
                 ))}
                 <div className="summary-row total">
                   <span>Reembolso pendente</span>
-                  <b>{money(report.refund_pending)}</b>
+                  <b>{formatCurrency(report.refund_pending)}</b>
                 </div>
                 <div className="summary-row">
                   <span>Reembolsado</span>
-                  <span>{money(report.refunded)}</span>
+                  <span>{formatCurrency(report.refunded)}</span>
                 </div>
                 <div className="summary-row">
                   <span>Entrega / retirada</span>
@@ -1061,7 +1064,8 @@ function OrderCard({
         {order.fulfillment === "delivery" ? "Entrega" : "Retirada"}
       </p>
       <small>
-        Sexta, {dateLabel(order.service_date)} · {order.slot} · {order.phone}
+        Sexta, {formatServiceDate(order.service_date)} · {order.slot} ·{" "}
+        {order.phone}
       </small>
       {order.address && (
         <p className="muted small" style={{ marginTop: 8 }}>
@@ -1086,7 +1090,7 @@ function OrderCard({
                 </small>
               ))}
             </div>
-            <span>{money(item.unit_price * item.quantity)}</span>
+            <span>{formatCurrency(item.unit_price * item.quantity)}</span>
           </div>
         ))}
       </div>
@@ -1101,10 +1105,12 @@ function OrderCard({
                 ? "Reembolsado"
                 : "Pendente"}
         </span>
-        <b>{money(order.total)}</b>
+        <b>{formatCurrency(order.total)}</b>
       </div>
       {order.change_for && (
-        <p className="muted small">Troco para {money(order.change_for)}</p>
+        <p className="muted small">
+          Troco para {formatCurrency(order.change_for)}
+        </p>
       )}
       {order.estimate && (
         <p className="muted small">Previsão: {order.estimate}</p>

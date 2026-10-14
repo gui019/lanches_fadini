@@ -26,6 +26,6 @@ if not path.exists():
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(fd, "w") as file:
         file.write(data)
-    print("Configuração local criada em .env (ignorada pelo Git).")
+    print("Local configuration created in .env (ignored by Git).")
 else:
-    print("Configuração .env existente preservada.")
+    print("Existing .env configuration preserved.")

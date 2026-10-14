@@ -30,25 +30,25 @@ from .models import (
     Order,
     PaymentEvent,
     Product,
-    now,
+    utc_now,
 )
 from .schemas import AddOnPatch, DeliveryRunIn, LoginIn, OrderIn, ProductPatch, StatusIn, StockIn, StopIn
 from .security import authenticate, require_admin
 from .services import (
     TERMINAL,
-    aware,
+    ensure_utc,
     cancel_order,
     create_order,
-    digest,
+    hash_token,
     expire_orders,
     fail,
     find_order,
-    get_batch,
-    history,
-    notify,
-    operation,
+    get_inventory_batch,
+    record_order_history,
+    enqueue_order_notification,
+    get_operation_window,
     serialize_order,
-    transition,
+    transition_order_status,
 )
 
 
@@ -121,8 +121,8 @@ def health(db=Depends(get_db)):
 @app.get("/api/v1/catalog")
 def catalog(db=Depends(get_db)):
     expire_orders(db)
-    op = operation()
-    batch = get_batch(db, date.fromisoformat(op["service_date"]))
+    op = get_operation_window()
+    batch = get_inventory_batch(db, date.fromisoformat(op["service_date"]))
     db.commit()
     products = db.scalars(select(Product)).all()
     addons = db.scalars(select(AddOn)).all()
@@ -181,7 +181,7 @@ def payment_pix(data: dict, db=Depends(get_db)):
     order = find_order(db, token, lock=True)
     if order.payment_method != "pix" or order.status != "pending_payment":
         fail("Este pedido não tem um Pix pendente.", 409)
-    if aware(order.expires_at) <= now():
+    if ensure_utc(order.expires_at) <= utc_now():
         fail("A reserva do Pix expirou.", 409)
     if not order.pix_id:
         try:
@@ -198,9 +198,9 @@ async def mp_webhook(request: Request, db=Depends(get_db)):
         fail("Integração indisponível.", 503)
     data_id = request.query_params.get("data.id", "")
     signature = request.headers.get("x-signature", "")
-    integrations.validate_mp_signature(data_id, request.headers.get("x-request-id", ""), signature)
+    integrations.validate_mercado_pago_signature(data_id, request.headers.get("x-request-id", ""), signature)
     try:
-        payment = integrations.mp_request("GET", f"/v1/payments/{int(data_id)}")
+        payment = integrations.mercado_pago_request("GET", f"/v1/payments/{int(data_id)}")
     except (ValueError, httpx.HTTPError):
         fail("Não foi possível validar o pagamento.", 502)
     order = db.scalar(select(Order).where(Order.id == payment.get("external_reference")).with_for_update())
@@ -223,7 +223,7 @@ async def mp_webhook(request: Request, db=Depends(get_db)):
         "refunded",
     }:
         if order.status in {"expired", "cancelled"} or (
-            order.expires_at and aware(order.expires_at) <= now()
+            order.expires_at and ensure_utc(order.expires_at) <= utc_now()
         ):
             if order.status not in TERMINAL:
                 cancel_order(db, order, by_admin=True)
@@ -232,8 +232,8 @@ async def mp_webhook(request: Request, db=Depends(get_db)):
         else:
             order.payment_status = "paid"
             order.status = "pending_approval"
-            history(db, order, "pending_approval", "Pix confirmado pelo Mercado Pago")
-            notify(db, order, "pix_paid")
+            record_order_history(db, order, "pending_approval", "Pix confirmado pelo Mercado Pago")
+            enqueue_order_notification(db, order, "pix_paid")
     db.commit()
     return {"received": True}
 
@@ -293,7 +293,7 @@ def me(admin=Depends(require_admin)):
 
 @app.post("/api/v1/admin/auth/logout")
 def logout(request: Request, response: Response, db=Depends(get_db), admin=Depends(require_admin)):
-    session = db.get(AdminSession, digest(request.cookies.get("carbons_session", "")))
+    session = db.get(AdminSession, hash_token(request.cookies.get("carbons_session", "")))
     if session:
         db.delete(session)
     db.commit()
@@ -327,7 +327,7 @@ def admin_order_update(order_id: str, data: StatusIn, db=Depends(get_db), admin=
     order = db.get(Order, order_id, with_for_update=True)
     if not order:
         fail("Pedido não encontrado.", 404)
-    transition(db, order, data.status, admin.id, data.estimate)
+    transition_order_status(db, order, data.status, admin.id, data.estimate)
     db.commit()
     return serialize_order(db, order, admin=True)
 
@@ -384,7 +384,7 @@ def manual_refund_confirmed(order_id: str, db=Depends(get_db), admin=Depends(req
 @app.get("/api/v1/admin/inventory")
 def inventory(db=Depends(get_db), admin=Depends(require_admin)):
     expire_orders(db)
-    get_batch(db, date.fromisoformat(operation()["service_date"]))
+    get_inventory_batch(db, date.fromisoformat(get_operation_window()["service_date"]))
     db.commit()
     batches = db.scalars(select(Batch).order_by(Batch.service_date.desc()).limit(12)).all()
     return {
@@ -420,7 +420,7 @@ def stock_update(data: StockIn, db=Depends(get_db), admin=Depends(require_admin)
     service = date.fromisoformat(data.service_date)
     if service.weekday() != 4:
         fail("O lote deve ser destinado a uma sexta-feira.")
-    batch = get_batch(db, service)
+    batch = get_inventory_batch(db, service)
     batch = db.get(Batch, batch.id, with_for_update=True, populate_existing=True)
     committed = batch.capacity - batch.available
     if data.capacity < committed:
@@ -529,13 +529,13 @@ def delivery_create(data: DeliveryRunIn, db=Depends(get_db), admin=Depends(requi
             fail("Selecione somente pedidos de entrega prontos.", 409)
         orders.append(order)
     token = secrets.token_hex(32)
-    run = DeliveryRun(name=data.name, token_hash=digest(token), expires_at=now() + timedelta(hours=4))
+    run = DeliveryRun(name=data.name, token_hash=hash_token(token), expires_at=utc_now() + timedelta(hours=4))
     db.add(run)
     db.flush()
     by_id = {o.id: o for o in orders}
     for position, oid in enumerate(data.order_ids, 1):
         db.add(DeliveryStop(run_id=run.id, order_id=oid, position=position))
-        transition(db, by_id[oid], "dispatched", admin.id)
+        transition_order_status(db, by_id[oid], "dispatched", admin.id)
     db.add(Audit(admin_id=admin.id, action="delivery.created", target=run.id))
     db.commit()
     return {"id": run.id, "token": token, "expires_at": run.expires_at.isoformat()}
@@ -564,9 +564,9 @@ def delivery_revoke(run_id: str, db=Depends(get_db), admin=Depends(require_admin
 
 
 def find_run(db, token, lock=False):
-    query = select(DeliveryRun).where(DeliveryRun.token_hash == digest(token))
+    query = select(DeliveryRun).where(DeliveryRun.token_hash == hash_token(token))
     run = db.scalar(query.with_for_update() if lock else query)
-    if not run or run.revoked or aware(run.expires_at) < now():
+    if not run or run.revoked or ensure_utc(run.expires_at) < utc_now():
         fail("Link da rota inválido, revogado ou expirado.", 410)
     return run
 
@@ -619,7 +619,7 @@ def delivery_stop(token: str, stop_id: str, data: StopIn, db=Depends(get_db)):
         if order.payment_status != "paid":
             order.payment_status = "paid"
         order.status = "completed"
-        history(db, order, "completed", "Entrega e recebimento confirmados pelo entregador")
+        record_order_history(db, order, "completed", "Entrega e recebimento confirmados pelo entregador")
     stop.status = data.status
     db.add(Audit(action=f"delivery.{data.status}", target=order.id))
     db.commit()

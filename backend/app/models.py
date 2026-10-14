@@ -7,11 +7,11 @@ from sqlalchemy.orm import Mapped, mapped_column
 from .db import Base
 
 
-def now():
+def utc_now():
     return datetime.now(UTC)
 
 
-def uid():
+def generate_uuid():
     return str(uuid4())
 
 
@@ -41,7 +41,7 @@ class AddOn(Base):
 
 class Batch(Base):
     __tablename__ = "inventory_batches"
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
     service_date: Mapped[datetime] = mapped_column(Date, unique=True)
     capacity: Mapped[int] = mapped_column(Integer, default=40)
     available: Mapped[int] = mapped_column(Integer, default=40)
@@ -50,7 +50,7 @@ class Batch(Base):
 
 class Order(Base):
     __tablename__ = "orders"
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
     code: Mapped[str] = mapped_column(String(12), unique=True)
     token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     idempotency_key: Mapped[str] = mapped_column(String(80), unique=True)
@@ -74,7 +74,7 @@ class Order(Base):
     slot: Mapped[str] = mapped_column(String(10))
     estimate: Mapped[str | None] = mapped_column(String(100), nullable=True)
     whatsapp_consent: Mapped[bool] = mapped_column(Boolean, default=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     stock_released: Mapped[bool] = mapped_column(Boolean, default=False)
     cancel_requested: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -85,16 +85,16 @@ class Order(Base):
 
 class History(Base):
     __tablename__ = "order_status_history"
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
     order_id: Mapped[str] = mapped_column(ForeignKey("orders.id"), index=True)
     status: Mapped[str] = mapped_column(String(40))
     message: Mapped[str] = mapped_column(String(200))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
 
 class Admin(Base):
     __tablename__ = "admins"
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
     username: Mapped[str] = mapped_column(String(100), unique=True)
     password_hash: Mapped[str] = mapped_column(String(255))
     totp_secret: Mapped[str] = mapped_column(String(64))
@@ -109,23 +109,23 @@ class AdminSession(Base):
 
 class Audit(Base):
     __tablename__ = "audit_logs"
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
     admin_id: Mapped[str | None] = mapped_column(ForeignKey("admins.id"), nullable=True)
     action: Mapped[str] = mapped_column(String(100))
     target: Mapped[str] = mapped_column(String(100))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
 
 class Event(Base):
     __tablename__ = "outbox_events"
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
     dedupe_key: Mapped[str] = mapped_column(String(150), unique=True)
     order_id: Mapped[str] = mapped_column(ForeignKey("orders.id"), index=True)
     kind: Mapped[str] = mapped_column(String(30))
     payload: Mapped[dict] = mapped_column(JSON)
     status: Mapped[str] = mapped_column(String(20), default="pending")
     attempts: Mapped[int] = mapped_column(Integer, default=0)
-    next_attempt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    next_attempt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     external_id: Mapped[str | None] = mapped_column(String(150), nullable=True)
     last_error: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
@@ -135,22 +135,22 @@ class PaymentEvent(Base):
     id: Mapped[str] = mapped_column(String(150), primary_key=True)
     order_id: Mapped[str | None] = mapped_column(ForeignKey("orders.id"), nullable=True)
     kind: Mapped[str] = mapped_column(String(50))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
 
 class DeliveryRun(Base):
     __tablename__ = "delivery_runs"
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
     token_hash: Mapped[str] = mapped_column(String(64), unique=True)
     name: Mapped[str] = mapped_column(String(100))
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     revoked: Mapped[bool] = mapped_column(Boolean, default=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
 
 class DeliveryStop(Base):
     __tablename__ = "delivery_stops"
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
     run_id: Mapped[str] = mapped_column(ForeignKey("delivery_runs.id"), index=True)
     order_id: Mapped[str] = mapped_column(ForeignKey("orders.id"), index=True)
     position: Mapped[int] = mapped_column(Integer)

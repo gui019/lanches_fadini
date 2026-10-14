@@ -19,7 +19,7 @@ class ItemIn(StrictModel):
 
     @field_validator("additions")
     @classmethod
-    def valid_additions(cls, value):
+    def validate_addition_quantities(cls, value):
         if any(type(v) is not int or not 1 <= v <= 5 for v in value.values()):
             raise ValueError("Cada adicional permite de uma a cinco unidades por lanche.")
         return value
@@ -52,13 +52,13 @@ class OrderIn(StrictModel):
 
     @field_validator("service_date")
     @classmethod
-    def valid_service_date(cls, value):
+    def validate_service_date(cls, value):
         date.fromisoformat(value)
         return value
 
     @field_validator("phone")
     @classmethod
-    def valid_phone(cls, value):
+    def validate_phone(cls, value):
         value = re.sub(r"\D", "", value)
         if value.startswith("55") and len(value) == 13:
             value = value[2:]
@@ -68,7 +68,7 @@ class OrderIn(StrictModel):
 
     @field_validator("email")
     @classmethod
-    def valid_email(cls, value):
+    def validate_email(cls, value):
         if value and not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", value):
             raise ValueError("E-mail inválido.")
         return value
@@ -100,7 +100,7 @@ class StockIn(StrictModel):
 
     @field_validator("service_date")
     @classmethod
-    def valid_service_date(cls, value):
+    def validate_service_date(cls, value):
         date.fromisoformat(value)
         return value
 

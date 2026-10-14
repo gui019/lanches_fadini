@@ -35,13 +35,15 @@ class Settings(BaseSettings):
     def validate_production(self):
         if len(self.token_secret) < 32:
             raise RuntimeError(
-                "Configure TOKEN_SECRET com ao menos 32 caracteres; use infra/init_env.py no desenvolvimento."
+                "Set TOKEN_SECRET to at least 32 characters; run infra/init_env.py for local development."
             )
         if self.app_env == "production":
             if self.demo_mode or not self.cookie_secure or not self.public_url.startswith("https://"):
-                raise RuntimeError("Produção exige DEMO_MODE=false, COOKIE_SECURE=true e PUBLIC_URL HTTPS.")
+                raise RuntimeError(
+                    "Production requires DEMO_MODE=false, COOKIE_SECURE=true, and an HTTPS PUBLIC_URL."
+                )
             if not self.database_url.startswith("postgresql"):
-                raise RuntimeError("Produção exige PostgreSQL.")
+                raise RuntimeError("Production requires PostgreSQL.")
 
 
 @lru_cache

@@ -33,7 +33,7 @@ def main():
     with os.fdopen(fd, "wb") as file:
         docker("pg_dump", "-U", "carbons", "-Fc", "carbons", stdout=file)
     print(
-        f"Backup local salvo em {target.relative_to(ROOT)}. Não envie esse arquivo ao GitHub."
+        f"Local backup saved to {target.relative_to(ROOT)}. Do not commit this file to GitHub."
     )
     if args.verify:
         name = "carbons_restore_" + secrets.token_hex(6)
@@ -66,11 +66,9 @@ def main():
                 counts.append(result.stdout.strip())
             if counts[0] != counts[1]:
                 raise RuntimeError(
-                    "As contagens do backup não conferem; investigue antes de usar."
+                    "Backup record counts do not match; investigate before using this backup."
                 )
-            print(
-                "Restauração em banco isolado verificada; contagens de produtos e pedidos conferem."
-            )
+            print("Isolated restore verified; product and order counts match.")
         finally:
             docker("dropdb", "-U", "carbons", name)
 

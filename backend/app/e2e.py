@@ -24,7 +24,7 @@ def wait_for(url, process):
     for _ in range(90):
         if process.poll() is not None:
             raise RuntimeError(
-                "O servidor de teste encerrou antes de iniciar; consulte /tmp/carbons-e2e-*.log."
+                "Test server exited before becoming ready; check carbons-e2e-*.log in the temporary directory."
             )
         try:
             if httpx.get(url, timeout=2).status_code == 200:
@@ -32,13 +32,13 @@ def wait_for(url, process):
         except httpx.HTTPError:
             pass
         time.sleep(1)
-    raise RuntimeError("Tempo de inicialização excedido.")
+    raise RuntimeError("Server readiness timed out.")
 
 
 def main():
     settings = Settings()
     if not settings.demo_mode or settings.app_env == "production":
-        raise SystemExit("Execute E2E somente em um ambiente local de demonstração.")
+        raise SystemExit("Run E2E tests only in a local demonstration environment.")
     root = Path(__file__).resolve().parents[2]
     url = make_url(settings.database_url)
     test_name = "carbons_test_e2e"

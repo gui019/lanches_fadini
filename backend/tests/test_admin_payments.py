@@ -10,7 +10,7 @@ from sqlalchemy import func, select
 
 from app.config import get_settings
 from app.db import SessionLocal
-from app.models import DeliveryRun, Event, History, Order, PaymentEvent, now
+from app.models import DeliveryRun, Event, History, Order, PaymentEvent, utc_now
 from app.services import expire_orders
 
 
@@ -118,7 +118,7 @@ def test_delivery_scope_expiration_and_revocation(admin, payload, create):
         delivered = db.get(Order, order["id"])
         assert delivered.status == "completed" and delivered.payment_status == "paid"
     with SessionLocal() as db:
-        db.get(DeliveryRun, run["id"]).expires_at = now() - timedelta(seconds=1)
+        db.get(DeliveryRun, run["id"]).expires_at = utc_now() - timedelta(seconds=1)
         db.commit()
     assert admin.get(f"/api/v1/delivery/{run['token']}").status_code == 410
     assert admin.post(f"/api/v1/admin/delivery-runs/{run['id']}/revoke").status_code == 200
@@ -133,7 +133,8 @@ def pix_order(monkeypatch, payload, create):
     monkeypatch.setattr(settings, "mercado_pago_webhook_secret", "test_only_signature")
     # Keep a fixed open business window independent of the test runner's date.
     with patch(
-        "app.services.operation", return_value={"open": True, "service_date": payload["service_date"]}
+        "app.services.get_operation_window",
+        return_value={"open": True, "service_date": payload["service_date"]},
     ):
         payload.update(payment_method="pix", email="teste@example.com", whatsapp_consent=True)
         result = create().json()
@@ -167,7 +168,7 @@ def signed_headers(timestamp=None):
 
 
 def test_three_webhooks_one_confirmation_one_outbox(client, pix_order):
-    with patch("app.integrations.mp_request", return_value=pix_order["provider"]):
+    with patch("app.integrations.mercado_pago_request", return_value=pix_order["provider"]):
         for _ in range(3):
             assert (
                 client.post(
@@ -195,7 +196,8 @@ def test_untrusted_webhooks_rejected(client, pix_order):
         == 401
     )
     with patch(
-        "app.integrations.mp_request", return_value={**pix_order["provider"], "transaction_amount": 1}
+        "app.integrations.mercado_pago_request",
+        return_value={**pix_order["provider"], "transaction_amount": 1},
     ):
         assert (
             client.post("/api/v1/webhooks/mercado-pago?data.id=123456", headers=signed_headers()).status_code
@@ -206,11 +208,11 @@ def test_untrusted_webhooks_rejected(client, pix_order):
 def test_expired_pix_releases_and_late_payment_refunds(client, pix_order):
     with SessionLocal() as db:
         order = db.scalar(select(Order))
-        order.expires_at = now() - timedelta(seconds=1)
+        order.expires_at = utc_now() - timedelta(seconds=1)
         db.commit()
         assert expire_orders(db) == 1
         db.commit()
-    with patch("app.integrations.mp_request", return_value=pix_order["provider"]):
+    with patch("app.integrations.mercado_pago_request", return_value=pix_order["provider"]):
         for _ in range(2):
             assert (
                 client.post(

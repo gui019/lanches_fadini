@@ -9,7 +9,7 @@ from sqlalchemy import func, select, update
 from app.config import get_settings
 from app.db import SessionLocal
 from app.models import Batch, History, Order
-from app.services import operation
+from app.services import get_operation_window
 
 
 def test_real_catalog_and_safe_configuration(client):
@@ -35,7 +35,7 @@ def test_real_catalog_and_safe_configuration(client):
 )
 def test_sao_paulo_schedule(monkeypatch, at, opened, date):
     monkeypatch.setattr(get_settings(), "demo_mode", False)
-    op = operation(datetime.fromisoformat(at))
+    op = get_operation_window(datetime.fromisoformat(at))
     assert op["open"] is opened
     assert op["service_date"] == date
 

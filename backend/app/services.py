@@ -11,7 +11,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert
 
 from .config import get_settings
-from .models import AddOn, Audit, Batch, Event, History, Order, Product, now
+from .models import AddOn, Audit, Batch, Event, History, Order, Product, utc_now
 
 TZ = ZoneInfo("America/Sao_Paulo")
 LABELS = {
@@ -40,23 +40,23 @@ def fail(message, status=400):
     raise HTTPException(status, detail=message)
 
 
-def digest(value):
+def hash_token(value):
     return hashlib.sha256(value.encode()).hexdigest()
 
 
-def tracking_token(order):
+def generate_tracking_token(order):
     return hmac.new(
         get_settings().token_secret.encode(), f"{order.id}:{order.idempotency_key}".encode(), hashlib.sha256
     ).hexdigest()
 
 
-def aware(value):
+def ensure_utc(value):
     return value.replace(tzinfo=UTC) if value.tzinfo is None else value
 
 
-def operation(at=None):
+def get_operation_window(at=None):
     settings = get_settings()
-    local = (at or now()).astimezone(TZ)
+    local = (at or utc_now()).astimezone(TZ)
     weekday = local.weekday()
     service = local.date() + timedelta(days=(4 - weekday) % 7)
     opened = (
@@ -88,7 +88,7 @@ def operation(at=None):
     }
 
 
-def get_batch(db, service_date):
+def get_inventory_batch(db, service_date):
     # INSERT ON CONFLICT avoids a race when the first clients open a new week.
     db.execute(
         insert(Batch)
@@ -99,11 +99,11 @@ def get_batch(db, service_date):
     return db.scalar(select(Batch).where(Batch.service_date == service_date))
 
 
-def history(db, order, status, message=None):
+def record_order_history(db, order, status, message=None):
     db.add(History(order_id=order.id, status=status, message=message or LABELS.get(status, status)))
 
 
-def notify(db, order, suffix=None):
+def enqueue_order_notification(db, order, suffix=None):
     if order.whatsapp_consent:
         db.add(
             Event(
@@ -128,15 +128,15 @@ def release_stock(db, order):
 def expire_orders(db):
     orders = db.scalars(
         select(Order)
-        .where(Order.status == "pending_payment", Order.expires_at <= now())
+        .where(Order.status == "pending_payment", Order.expires_at <= utc_now())
         .with_for_update(skip_locked=True)
     ).all()
     for order in orders:
         order.status = "expired"
         order.payment_status = "expired"
         release_stock(db, order)
-        history(db, order, "expired")
-        notify(db, order)
+        record_order_history(db, order, "expired")
+        enqueue_order_notification(db, order)
     return len(orders)
 
 
@@ -169,15 +169,15 @@ def validate_address(data):
 def create_order(db, data, key):
     if not key or not 16 <= len(key) <= 80:
         fail("Envie uma chave de idempotência válida.")
-    fingerprint = digest(json.dumps(data.model_dump(), sort_keys=True, ensure_ascii=False))
+    fingerprint = hash_token(json.dumps(data.model_dump(), sort_keys=True, ensure_ascii=False))
     # Serialize identical requests across API workers, including lost-response retries.
-    db.execute(select(func.pg_advisory_xact_lock(int(digest(key)[:15], 16))))
+    db.execute(select(func.pg_advisory_xact_lock(int(hash_token(key)[:15], 16))))
     previous = db.scalar(select(Order).where(Order.idempotency_key == key))
     if previous:
         if previous.request_hash != fingerprint:
             fail("Esta chave já foi utilizada para outro pedido.", 409)
-        return previous, tracking_token(previous)
-    op = operation()
+        return previous, generate_tracking_token(previous)
+    op = get_operation_window()
     if not op["open"]:
         fail(op["message"], 409)
     if data.service_date != op["service_date"]:
@@ -238,7 +238,7 @@ def create_order(db, data, key):
         fail("O valor do carrinho mudou. Revise os valores antes de finalizar.", 409)
     if data.payment_method == "cash" and data.change_for and data.change_for < total:
         fail("O valor para troco deve ser igual ou maior que o total.")
-    batch = get_batch(db, date.fromisoformat(data.service_date))
+    batch = get_inventory_batch(db, date.fromisoformat(data.service_date))
     reserved = db.execute(
         update(Batch)
         .where(Batch.id == batch.id, Batch.available >= stock_units)
@@ -269,25 +269,25 @@ def create_order(db, data, key):
         change_for=data.change_for if data.payment_method == "cash" else None,
         slot=data.slot,
         whatsapp_consent=data.whatsapp_consent,
-        expires_at=now() + timedelta(minutes=30) if data.payment_method == "pix" else None,
+        expires_at=utc_now() + timedelta(minutes=30) if data.payment_method == "pix" else None,
     )
     db.add(order)
     db.flush()
-    token = tracking_token(order)
-    order.token_hash = digest(token)
-    history(db, order, order.status)
+    token = generate_tracking_token(order)
+    order.token_hash = hash_token(token)
+    record_order_history(db, order, order.status)
     return order, token
 
 
 def find_order(db, token, lock=False):
     if len(token) != 64:
         fail("Link de acompanhamento inválido.", 404)
-    query = select(Order).where(Order.token_hash == digest(token))
+    query = select(Order).where(Order.token_hash == hash_token(token))
     order = db.scalar(query.with_for_update() if lock else query)
     if not order:
         fail("Pedido não encontrado ou link expirado.", 404)
     batch = db.get(Batch, order.batch_id)
-    if now().date() > batch.service_date + timedelta(days=7):
+    if utc_now().date() > batch.service_date + timedelta(days=7):
         fail("Este link de acompanhamento expirou.", 410)
     return order
 
@@ -344,7 +344,9 @@ def cancel_order(db, order, by_admin=False):
     if order.status in {"preparing", "ready", "dispatched"} and not by_admin:
         if not order.cancel_requested:
             order.cancel_requested = True
-            history(db, order, "cancel_requested", "Solicitação de cancelamento enviada à equipe")
+            record_order_history(
+                db, order, "cancel_requested", "Solicitação de cancelamento enviada à equipe"
+            )
         return
     # Started food has already consumed its ingredients and cannot be resold.
     if order.status in {"pending_payment", "pending_approval", "confirmed"}:
@@ -354,11 +356,11 @@ def cancel_order(db, order, by_admin=False):
         order.payment_status = "refund_pending"
         if order.payment_method == "pix":
             db.add(Event(dedupe_key=f"refund:{order.id}", order_id=order.id, kind="refund", payload={}))
-    history(db, order, "cancelled")
-    notify(db, order)
+    record_order_history(db, order, "cancelled")
+    enqueue_order_notification(db, order)
 
 
-def transition(db, order, target, admin_id, estimate=None):
+def transition_order_status(db, order, target, admin_id, estimate=None):
     if target not in TRANSITIONS.get(order.status, set()):
         fail("Esta mudança de status não é permitida.", 409)
     if target == "confirmed":
@@ -378,6 +380,6 @@ def transition(db, order, target, admin_id, estimate=None):
         cancel_order(db, order, by_admin=True)
     else:
         order.status = target
-        history(db, order, target)
-        notify(db, order)
+        record_order_history(db, order, target)
+        enqueue_order_notification(db, order)
     db.add(Audit(admin_id=admin_id, action=f"order.{target}", target=order.id))

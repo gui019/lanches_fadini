@@ -11,7 +11,7 @@ from .config import get_settings
 from .services import fail
 
 
-def mp_request(method, path, *, key=None, payload=None):
+def mercado_pago_request(method, path, *, key=None, payload=None):
     settings = get_settings()
     if not settings.pix_enabled:
         raise RuntimeError("pix_not_configured")
@@ -25,7 +25,7 @@ def mp_request(method, path, *, key=None, payload=None):
 
 
 def create_pix(order):
-    payment = mp_request(
+    payment = mercado_pago_request(
         "POST",
         "/v1/payments",
         key=f"pix-{order.id}",
@@ -46,7 +46,7 @@ def create_pix(order):
     order.pix_data = {"copy_paste": detail["qr_code"], "qr_base64": detail["qr_code_base64"]}
 
 
-def validate_mp_signature(data_id, request_id, signature, at=None):
+def validate_mercado_pago_signature(data_id, request_id, signature, at=None):
     secret = get_settings().mercado_pago_webhook_secret
     if not secret or not data_id or not request_id:
         fail("Webhook não autorizado.", 401)

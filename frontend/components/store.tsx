@@ -28,15 +28,15 @@ import {
 } from "lucide-react";
 import { Brand } from "./brand";
 import { Modal } from "./modal";
-import { api } from "@/lib/api";
+import { requestApi } from "@/lib/api";
 import {
   type AddOn,
   type CartItem,
   type Catalog,
   type Order,
   type Product,
-  dateLabel,
-  money,
+  formatServiceDate,
+  formatCurrency,
 } from "@/lib/types";
 
 const cartKey = "carbons-cart-v1";
@@ -54,7 +54,7 @@ export default function Store() {
     [toast, setToast] = useState("");
   const refresh = useCallback(() => {
     setLoadError("");
-    api<Catalog>("/catalog")
+    requestApi<Catalog>("/catalog")
       .then(setCatalog)
       .catch((e) => setLoadError(e.message));
   }, []);
@@ -126,7 +126,7 @@ export default function Store() {
       p.name.toLowerCase().includes(search.toLowerCase()),
   );
   const service = catalog
-    ? dateLabel(catalog.operation.service_date)
+    ? formatServiceDate(catalog.operation.service_date)
     : "sexta-feira";
   return (
     <>
@@ -407,7 +407,7 @@ export default function Store() {
                       <p>{product.description}</p>
                       <div className="product-bottom">
                         <span className="product-price">
-                          {money(product.price)}
+                          {formatCurrency(product.price)}
                         </span>
                         <button
                           className="add-button"
@@ -640,7 +640,7 @@ export default function Store() {
           <span>
             Ver sacola · {count} {count === 1 ? "lanche" : "lanches"}
           </span>
-          <b>{money(subtotal)}</b>
+          <b>{formatCurrency(subtotal)}</b>
         </button>
       )}
       <div className="toast-region" role="status" aria-live="polite">
@@ -709,7 +709,7 @@ export default function Store() {
                             id}
                         </small>
                       ))}
-                      <b>{money(item.unit_price * item.quantity)}</b>
+                      <b>{formatCurrency(item.unit_price * item.quantity)}</b>
                       <div className="quantity-control">
                         <button
                           aria-label={`Diminuir ${item.product.name}`}
@@ -744,7 +744,7 @@ export default function Store() {
               <div className="drawer-footer">
                 <div className="summary-row">
                   <span>Subtotal</span>
-                  <b>{money(subtotal)}</b>
+                  <b>{formatCurrency(subtotal)}</b>
                 </div>
                 <p className="muted small">
                   A taxa de entrega é calculada na próxima etapa.
@@ -810,7 +810,7 @@ function Customize({
         <span className="eyebrow">FEITO PRA VOCÊ</span>
         <h3>{product.name}</h3>
         <p>{product.description}</p>
-        <b>{money(product.price)}</b>
+        <b>{formatCurrency(product.price)}</b>
       </div>
       <div className="custom-tabs">
         <button
@@ -861,7 +861,7 @@ function Customize({
                 <div className="addon-option" key={addon.id}>
                   <span>
                     {addon.name}
-                    <small>+ {money(addon.price)}</small>
+                    <small>+ {formatCurrency(addon.price)}</small>
                   </span>
                   <div className="quantity-control">
                     <button
@@ -938,7 +938,7 @@ function Customize({
           <ShoppingBag size={17} />
           {maxQuantity < 1
             ? "Sacola cheia"
-            : `Adicionar · ${money(unit * quantity)}`}
+            : `Adicionar · ${formatCurrency(unit * quantity)}`}
         </button>
       </div>
     </Modal>
@@ -1012,11 +1012,14 @@ function Checkout({
     if (!request.current || request.current.fingerprint !== fingerprint)
       request.current = { fingerprint, key: crypto.randomUUID() };
     try {
-      const result = await api<{ order: Order; token: string }>("/orders", {
-        method: "POST",
-        headers: { "Idempotency-Key": request.current.key },
-        body: JSON.stringify(data),
-      });
+      const result = await requestApi<{ order: Order; token: string }>(
+        "/orders",
+        {
+          method: "POST",
+          headers: { "Idempotency-Key": request.current.key },
+          body: JSON.stringify(data),
+        },
+      );
       onSuccess();
       sessionStorage.setItem("carbons-last-order", result.token);
       window.location.assign(`/acompanhar/${result.token}`);
@@ -1050,7 +1053,7 @@ function Checkout({
           >
             <Truck size={21} />
             <b>Entrega</b>
-            <small>Taxa de {money(600)}</small>
+            <small>Taxa de {formatCurrency(600)}</small>
           </button>
           <button
             type="button"
@@ -1066,7 +1069,9 @@ function Checkout({
         <div className="schedule-box">
           <CalendarDays size={19} />
           <div>
-            <b>Sexta-feira, {dateLabel(catalog.operation.service_date)}</b>
+            <b>
+              Sexta-feira, {formatServiceDate(catalog.operation.service_date)}
+            </b>
             <span>Atendimento entre 20h e 22h</span>
           </div>
         </div>
@@ -1266,15 +1271,15 @@ function Checkout({
       <div className="drawer-footer">
         <div className="summary-row">
           <span>{cart.reduce((s, i) => s + i.quantity, 0)} lanche(s)</span>
-          <span>{money(subtotal)}</span>
+          <span>{formatCurrency(subtotal)}</span>
         </div>
         <div className="summary-row">
           <span>{fulfillment === "delivery" ? "Entrega" : "Retirada"}</span>
-          <span>{fee ? money(fee) : "Grátis"}</span>
+          <span>{fee ? formatCurrency(fee) : "Grátis"}</span>
         </div>
         <div className="summary-row total">
           <b>Total</b>
-          <b>{money(total)}</b>
+          <b>{formatCurrency(total)}</b>
         </div>
         <button
           className="button button-yellow full"
